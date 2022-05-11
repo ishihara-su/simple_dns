@@ -4,18 +4,17 @@ import socket
 import struct
 import sys
 
-# Note:
-#  According to RFC1035...
-#   - Label length <= 63 octets
-#   - Name length <= 255 octes
-#   - TTL < 0x7FFFFFFF
-#   - UDP Message Length <= 512
-
 DNS_QTYPE_A = 1
 DNS_QCLASS_IN = 1
 DNS_PORT = 53
+DNS_MAX_MSG_LEN = 512
 
 def make_dns_request(domain_str):
+    """Makes a DNS query request message
+
+    :param domain_str: string of domain
+    :return: bytes of DNS query message
+    """
     query_id = 0 # 16 bits
     qr = 0 << 15 # 1 bit
     opcode = 0 << 11 # 4 bit
@@ -40,6 +39,11 @@ def make_dns_request(domain_str):
     return header + qname + struct.pack('!hh', DNS_QTYPE_A, DNS_QCLASS_IN)
 
 def show_dns_reply(reply_bytes):
+    """Shows DNS reply
+
+    :param reply_bytes: Replied DNS message
+    """
+    # TODO: decode the reply message
     i = 0
     for b in reply_bytes:
         i += 1
@@ -55,12 +59,11 @@ if len(sys.argv) < 3:
 
 destination_host = sys.argv[1]
 domain_in_question = sys.argv[2]
-RCV_BUF_SIZE = 512
 
 with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
     req = make_dns_request(domain_in_question)
     s.sendto(req, (destination_host, DNS_PORT))
     # TODO: handle timeout
-    (rep, addr) = s.recvfrom(RCV_BUF_SIZE)
+    (rep, addr) = s.recvfrom(DNS_MAX_MSG_LEN)
 
 show_dns_reply(rep)
