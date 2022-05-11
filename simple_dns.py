@@ -1,5 +1,6 @@
 # simple_dns.py - Simple DNS client
 #
+import random
 import socket
 import struct
 import sys
@@ -15,7 +16,7 @@ def make_dns_request(domain_str):
     :param domain_str: string of domain
     :return: bytes of DNS query message
     """
-    query_id = 0 # 16 bits
+    query_id = random.getrandbits(16) # 16 bits
     qr = 0 << 15 # 1 bit
     opcode = 0 << 11 # 4 bit
     aa = 0 << 10 # 1 bit
@@ -28,8 +29,8 @@ def make_dns_request(domain_str):
     ancount = 0 # 16 bits
     nscount = 0 # 16 bits
     arcount = 0 # 16 bits
-    second_hw = qr & opcode & aa & tc & rd & ra & ra & z & rcode
-    header = struct.pack('!hhhhhh', query_id, second_hw, qd_count, ancount, nscount, arcount)
+    second_hw = qr | opcode | aa | tc | rd | ra | ra | z | rcode
+    header = struct.pack('!HHHHHH', query_id, second_hw, qd_count, ancount, nscount, arcount)
     labels = domain_str.split('.')
     qname = b''
     for s in labels:
