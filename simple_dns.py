@@ -37,6 +37,7 @@ def make_dns_request(domain_str):
         qname += struct.pack('!B', len(s))
         qname += s.encode()
     qname += b'\0'
+    print(f'Query ID: {query_id:5d}')
     return header + qname + struct.pack('!hh', DNS_QTYPE_A, DNS_QCLASS_IN)
 
 def show_dns_reply(reply_bytes):
@@ -45,6 +46,7 @@ def show_dns_reply(reply_bytes):
     :param reply_bytes: Replied DNS message
     """
     # TODO: decode the reply message
+    print("------------------")
     i = 0
     for b in reply_bytes:
         i += 1
@@ -53,6 +55,33 @@ def show_dns_reply(reply_bytes):
             print('  ', end='')
         if i % 16 == 0:
             print()
+    # decode header
+    print()
+    print("------------------")
+    header = reply_bytes[:12]
+    body = reply_bytes[12:]
+    (query_id, field_byte1, field_byte2, qdcount, ancount, nscount, arcount) = struct.unpack('!HBBHHHH', header)
+    qr = (0x80 & field_byte1) >> 7
+    opcode = (0x78 & field_byte1) >> 3
+    aa = (0x04 & field_byte1) >> 2
+    tc = (0x02 & field_byte1) >> 1
+    rd = 0x01 & field_byte1
+    ra = (0x80 & field_byte2) >> 7
+    z =  (0x70 & field_byte2) >> 4
+    rcode = 0x0f & field_byte2
+    print(f'ID       {query_id:5d}')
+    print(f'QR      {qr:2d}')
+    print(f'Opcode  {opcode:2d}')
+    print(f'AA      {aa:2d}')
+    print(f'TC      {tc:2d}')
+    print(f'RD      {rd:2d}')
+    print(f'RA      {ra:2d}')
+    print(f'Z       {z:2d}')
+    print(f'RCODE   {rcode:2d}')
+    print(f'QDCOUNT {qdcount:2d}')
+    print(f'ANCOUNT {ancount:2d}')
+    print(f'NSCOUNT {nscount:2d}')
+    print(f'ARCOUNT {arcount:2d}')
 
 if len(sys.argv) < 3:
     print(f'Usage python3 {sys.argv[0]} server domain_in_question', file=sys.stderr)
