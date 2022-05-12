@@ -10,7 +10,38 @@ DNS_QCLASS_IN = 1
 DNS_PORT = 53
 DNS_MAX_MSG_LEN = 512
 
+def dump_bytes(byte_data):
+    i = 0
+    dump_str = ""
+    for b in byte_data:
+        i += 1
+        if (b == 45 or 48 <= b <= 57 or 65 <= b <= 90 or
+            97 <= b <= 122):
+            dump_str += f'{b:c}'
+        else:
+            dump_str += '_'
+        print(f'{b:02x} ', end='')
+        if i % 8 == 0:
+            print('  ', end='')
+        if i % 16 == 0:
+            print('' + dump_str)
+            dump_str = ""
+    char_offset = 50 - (i % 16) * 3
+    if char_offset > 26:
+        char_offset += 2
+    if char_offset < 50:
+        print(' ' * char_offset + dump_str)
+    print()
+
 class DNSHeader:
+    qr_str = ["Query", "Response"]
+    opcode_str = ["QUERY", "IQUERY", "STATUS"] + ["RESERVED"] * 13
+    aa_str = ["", "Authoritative Answer"]
+    tc_str = ["", "Truncated"]
+    rd_str = ["", "Recursion Desired"]
+    ra_str = ["", "Recursion Available"]
+    rcode_str = ["No error", "Format error", "Server failure",
+                 "Name Error", "Not Implementd", "Refused"] + ["Reserved"] * 10
     def __init__(self, header_bytes=None, query_id=0, qr=0, opcode=0, aa=0, tc=0,
                  rd=1, ra=0, z=0, rcode=0, qdcount=1, ancount=0, nscount=0, arcount=0):
         if header_bytes:
@@ -52,6 +83,21 @@ class DNSHeader:
         header_bytes = struct.pack('!HHHHHH', self.query_id, second_hw,
                                    self.qdcount, self.ancount, self.nscount, self.arcount)
         return header_bytes
+
+    def show(self):
+        print(f'ID       {self.query_id:5d}')
+        print(f'QR      {self.qr:2d} {DNSHeader.qr_str[self.qr]}')
+        print(f'Opcode  {self.opcode:2d} {DNSHeader.opcode_str[self.opcode]}')
+        print(f'AA      {self.aa:2d} {DNSHeader.aa_str[self.aa]}')
+        print(f'TC      {self.tc:2d} {DNSHeader.tc_str[self.tc]}')
+        print(f'RD      {self.rd:2d} {DNSHeader.rd_str[self.rd]}')
+        print(f'RA      {self.ra:2d} {DNSHeader.ra_str[self.ra]}')
+        print(f'Z       {self.z:2d}')
+        print(f'RCODE   {self.rcode:2d} {DNSHeader.rcode_str[self.rcode]}')
+        print(f'QDCOUNT {self.qdcount:2d}')
+        print(f'ANCOUNT {self.ancount:2d}')
+        print(f'NSCOUNT {self.nscount:2d}')
+        print(f'ARCOUNT {self.arcount:2d}')
 
 
 class DNSRecord:
@@ -103,34 +149,14 @@ class DNSClient:
         :param reply_bytes: Replied DNS message
         """
         # TODO: decode the reply message
-        print("------------------")
-        i = 0
-        for b in reply_bytes:
-            i += 1
-            print(f'{b:02x} ', end='')
-            if i % 8 == 0:
-                print('  ', end='')
-            if i % 16 == 0:
-                print()
-        # decode header
+        print("* Hex dump")
+        dump_bytes(reply_bytes)
         print()
-        print("------------------")
+        print("# Header ")
         header_bytes = reply_bytes[:12]
         body_bytes = reply_bytes[12:]
         header = DNSHeader(header_bytes)
-        print(f'ID       {header.query_id:5d}')
-        print(f'QR      {header.qr:2d}')
-        print(f'Opcode  {header.opcode:2d}')
-        print(f'AA      {header.aa:2d}')
-        print(f'TC      {header.tc:2d}')
-        print(f'RD      {header.rd:2d}')
-        print(f'RA      {header.ra:2d}')
-        print(f'Z       {header.z:2d}')
-        print(f'RCODE   {header.rcode:2d}')
-        print(f'QDCOUNT {header.qdcount:2d}')
-        print(f'ANCOUNT {header.ancount:2d}')
-        print(f'NSCOUNT {header.nscount:2d}')
-        print(f'ARCOUNT {header.arcount:2d}')
+        header.show()
 
 
 if __name__ == '__main__':
