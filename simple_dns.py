@@ -1,4 +1,4 @@
-# simple_dns.py - Simple DNS client
+
 #
 import random
 import socket
@@ -99,6 +99,107 @@ class DNSHeader:
         print(f'NSCOUNT {self.nscount:2d}')
         print(f'ARCOUNT {self.arcount:2d}')
 
+class DNSNameManager:
+    def __init__(self):
+        self._dict = {}
+
+    def read_domain_str(self, offset, domain_bytes):
+        domain_str = ''
+        i = 0
+        while True:
+            b = domain_bytes[i]
+            if b >> 6 == 3: # Top 2 bits are 11
+                return domain_str + self.get_label(b & 0x3f)
+            elif b == 0:
+                return domain_str
+            elif b > 0x3f:
+                # TODO: raise Error in DNSQuestion
+                break
+            label = domain_bytes[i+1:i+b+1]
+            next_pos = i + b + 1 if domain_bytes[i+b+1] > 0 else 0
+            self.register(offset + i, label, offset + next_pos)
+            domain_str += '.' if i > 0 else ''
+            domain_str += label
+
+    def get_label(self, offset):
+        label = ''
+        while offset > 0:
+            (new_label, offset) = self._dict[offset]
+            if label == '':
+                label = new_label
+            else:
+                label += '.' + new_label
+        return label
+
+    def register(self, offset, label, next_offset):
+        self._dict[offset] = (label, next_offset)
+
+class DNSQuestion:
+    QTYPE_A = 1
+    QTYPE_NS = 2
+    QTYPE_MD = 3
+    QTYPE_MF = 4
+    QTYPE_CNAME = 5
+    QTYPE_SOA = 6
+    QTYPE_MB = 7
+    QTYPE_MG = 8
+    QTYPE_MR = 9
+    QTYPE_NULL = 10
+    QTYPE_WKS = 11
+    QTYPE_PTR = 12
+    QTYPE_HINFO = 13
+    QTYPE_MINFO = 14
+    QTYPE_MX = 15
+    QTYPE_TXT = 16
+    QTYPE_AXFR = 252
+    QTYPE_MAILB = 253
+    QTYPE_MAILA = 254
+    QTYPE_ALL = 255
+    qtype_str = {1:"A", 2:"NS", 3:"MD", 4:"MF", 5:"CNAME", 6:"SOA", 7:"MB", 8:"MG",
+                 9:"MR", 10:"NULL", 11:"WKS", 12:"PTR", 13:"HINFO", 14:"MINFO",
+                 15:"MX", 16:"TXT", 252:"AXFR", 253:"MAILB", 254:"MAILA", 255:"*"}
+    CLASS_IN = 1
+    CLASS_CS = 2
+    CLASS_CH = 3
+    CLASS_HS = 4
+    class_str = {1:"IN", 2:"CS", 3:"CH", 4:"HS"}
+
+    def __init__(self, name_manager, offset, question_bytes=None,
+                 domain='', qtype=QTYPE_A, qclass=CLASS_IN):
+        if question_bytes:
+            self.init_from_bytes(name_manager, offset, question_bytes)
+            return
+        self.domain = domain
+        self.qtype = qtype
+        self.qclass = qclass
+        self._byte_data = self._make_bytes(name_manager, offset)
+
+    def init_from_bytes(self, name_manager: DNSNameManager, offset, question_bytes):
+        self.domain = name_manager.read_domain_str(offset, question_bytes)
+        qtype_pos = question_bytes.find(b'\0') + 1
+        self.qtype = question_bytes[qtype_pos]
+        self.qclass = question_bytes[qtype_pos+1]
+        self._byte_data = question_bytes
+
+
+    def _make_bytes(self, name_manager: DNSNameManager, offset):
+        labels = self.domain.split('.')
+        qname = b''
+        pos = 0
+        positions = []
+        for s in labels:
+            qname += struct.pack('!B', len(s))
+            qname += s.encode()
+            positions.append(pos)
+            pos += len(s)
+        qname += b'\0'
+        positions.append(0)
+        for i in len(labels):
+            name_manager.register(offset+positions[i], labels[i], offset+positions[i+1])
+        return qname +struct.pack('!HH', self.qtype, self.qclass)
+
+    def get_bytes(self):
+        return self._byte_data
 
 class DNSRecord:
     def __init__(self):
@@ -118,11 +219,12 @@ class DNSClient:
     DNS_UDP_MAX_MESSAGE_LENGTH = 512
 
     def __init__(self):
+        self.name_manager = DNSNameManager()
         pass
 
     def do_query(self, nameserver, domain_str):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            req = self.make_dns_request(domain_str)
+            req = self.make_dns_request_new(domain_str)
             s.sendto(req, (nameserver, DNS_PORT))
             # TODO: handle timeout
             (rep, addr) = s.recvfrom(DNSClient.DNS_UDP_MAX_MESSAGE_LENGTH)
@@ -142,6 +244,12 @@ class DNSClient:
             qname += s.encode()
         qname += b'\0'
         return header_bytes + qname + struct.pack('!hh', DNS_QTYPE_A, DNS_QCLASS_IN)
+
+    def make_dns_request_new(self, domain_str):
+        header_bytes = DNSHeader(query_id=random.getrandbits(16)).get_bytes()
+        question_bytes = DNSQuestion(self.name_manager, len(header_bytes),
+                                     domain=domain_str).get_bytes()
+        return header_bytes + question_bytes
 
     def show_dns_reply(self, reply_bytes):
         """Shows DNS reply
