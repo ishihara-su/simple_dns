@@ -10,35 +10,65 @@ DNS_QCLASS_IN = 1
 DNS_PORT = 53
 DNS_MAX_MSG_LEN = 512
 
+class DNSHeader:
+    def __init__(self, header_bytes=None, query_id=0, qr=0, opcode=0, aa=0, tc=0,
+                 rd=1, ra=0, z=0, rcode=0, qdcount=1, ancount=0, nscount=0, arcount=0):
+        if header_bytes:
+            self.init_from_bytes(header_bytes)
+            return
+        self.query_id = query_id
+        self.qr = qr
+        self.opcode = opcode
+        self.aa = aa
+        self.tc = tc
+        self.ra = ra
+        self.rd = rd
+        self.z = z
+        self.rcode = rcode
+        self.qdcount = qdcount
+        self.ancount = ancount
+        self.nscount = nscount
+        self.arcount = arcount
+
+    def init_from_bytes(self, header_bytes):
+        (query_id, field_byte1, field_byte2, qdcount, ancount, nscount, arcount) = struct.unpack('!HBBHHHH', header_bytes)
+        self.qr = (0x80 & field_byte1) >> 7
+        self.opcode = (0x78 & field_byte1) >> 3
+        self.aa = (0x04 & field_byte1) >> 2
+        self.tc = (0x02 & field_byte1) >> 1
+        self.rd = 0x01 & field_byte1
+        self.ra = (0x80 & field_byte2) >> 7
+        self.z =  (0x70 & field_byte2) >> 4
+        self.rcode = 0x0f & field_byte2
+        self.query_id = query_id
+        self.qdcount = qdcount
+        self.ancount = ancount
+        self.nscount = nscount
+        self.arcount = arcount
+
+    def get_bytes(self):
+        second_hw = (self.qr << 15 | self.opcode << 11 | self.aa << 10 | self.tc << 9 |
+                     self.rd << 8 | self.ra << 7 | self.z << 4)
+        header_bytes = struct.pack('!HHHHHH', self.query_id, second_hw,
+                                   self.qdcount, self.ancount, self.nscount, self.arcount)
+        return header_bytes
+
+
 def make_dns_request(domain_str):
     """Makes a DNS query request message
 
     :param domain_str: string of domain
     :return: bytes of DNS query message
     """
-    query_id = random.getrandbits(16) # 16 bits
-    qr = 0 << 15 # 1 bit
-    opcode = 0 << 11 # 4 bit
-    aa = 0 << 10 # 1 bit
-    tc = 0 << 9 # 1 bit
-    rd = 1 << 8 # 1 bit # 再帰要求（通常）
-    ra = 0 << 7 # 1 bit
-    z = 0 << 4 # 3 bits
-    rcode = 0 # 4 bits
-    qd_count = 1 # 16 bits
-    ancount = 0 # 16 bits
-    nscount = 0 # 16 bits
-    arcount = 0 # 16 bits
-    second_hw = qr | opcode | aa | tc | rd | ra | ra | z | rcode
-    header = struct.pack('!HHHHHH', query_id, second_hw, qd_count, ancount, nscount, arcount)
+    header_bytes = DNSHeader(query_id=random.getrandbits(16)).get_bytes()
     labels = domain_str.split('.')
     qname = b''
     for s in labels:
         qname += struct.pack('!B', len(s))
         qname += s.encode()
     qname += b'\0'
-    print(f'Query ID: {query_id:5d}')
-    return header + qname + struct.pack('!hh', DNS_QTYPE_A, DNS_QCLASS_IN)
+    return header_bytes + qname + struct.pack('!hh', DNS_QTYPE_A, DNS_QCLASS_IN)
+
 
 def show_dns_reply(reply_bytes):
     """Shows DNS reply
@@ -58,30 +88,36 @@ def show_dns_reply(reply_bytes):
     # decode header
     print()
     print("------------------")
-    header = reply_bytes[:12]
-    body = reply_bytes[12:]
-    (query_id, field_byte1, field_byte2, qdcount, ancount, nscount, arcount) = struct.unpack('!HBBHHHH', header)
-    qr = (0x80 & field_byte1) >> 7
-    opcode = (0x78 & field_byte1) >> 3
-    aa = (0x04 & field_byte1) >> 2
-    tc = (0x02 & field_byte1) >> 1
-    rd = 0x01 & field_byte1
-    ra = (0x80 & field_byte2) >> 7
-    z =  (0x70 & field_byte2) >> 4
-    rcode = 0x0f & field_byte2
-    print(f'ID       {query_id:5d}')
-    print(f'QR      {qr:2d}')
-    print(f'Opcode  {opcode:2d}')
-    print(f'AA      {aa:2d}')
-    print(f'TC      {tc:2d}')
-    print(f'RD      {rd:2d}')
-    print(f'RA      {ra:2d}')
-    print(f'Z       {z:2d}')
-    print(f'RCODE   {rcode:2d}')
-    print(f'QDCOUNT {qdcount:2d}')
-    print(f'ANCOUNT {ancount:2d}')
-    print(f'NSCOUNT {nscount:2d}')
-    print(f'ARCOUNT {arcount:2d}')
+    header_bytes = reply_bytes[:12]
+    body_bytes = reply_bytes[12:]
+    header = DNSHeader(header_bytes)
+    print(f'ID       {header.query_id:5d}')
+    print(f'QR      {header.qr:2d}')
+    print(f'Opcode  {header.opcode:2d}')
+    print(f'AA      {header.aa:2d}')
+    print(f'TC      {header.tc:2d}')
+    print(f'RD      {header.rd:2d}')
+    print(f'RA      {header.ra:2d}')
+    print(f'Z       {header.z:2d}')
+    print(f'RCODE   {header.rcode:2d}')
+    print(f'QDCOUNT {header.qdcount:2d}')
+    print(f'ANCOUNT {header.ancount:2d}')
+    print(f'NSCOUNT {header.nscount:2d}')
+    print(f'ARCOUNT {header.arcount:2d}')
+
+class DNSRecord:
+    def __init__(self):
+        pass
+
+class DNSMessage:
+    def __init__(self):
+        pass
+
+    def __init__(self, reply_bytes):
+        pass
+
+class DNSRecordReader:
+    pass
 
 if len(sys.argv) < 3:
     print(f'Usage python3 {sys.argv[0]} server domain_in_question', file=sys.stderr)
