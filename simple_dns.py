@@ -54,57 +54,6 @@ class DNSHeader:
         return header_bytes
 
 
-def make_dns_request(domain_str):
-    """Makes a DNS query request message
-
-    :param domain_str: string of domain
-    :return: bytes of DNS query message
-    """
-    header_bytes = DNSHeader(query_id=random.getrandbits(16)).get_bytes()
-    labels = domain_str.split('.')
-    qname = b''
-    for s in labels:
-        qname += struct.pack('!B', len(s))
-        qname += s.encode()
-    qname += b'\0'
-    return header_bytes + qname + struct.pack('!hh', DNS_QTYPE_A, DNS_QCLASS_IN)
-
-
-def show_dns_reply(reply_bytes):
-    """Shows DNS reply
-
-    :param reply_bytes: Replied DNS message
-    """
-    # TODO: decode the reply message
-    print("------------------")
-    i = 0
-    for b in reply_bytes:
-        i += 1
-        print(f'{b:02x} ', end='')
-        if i % 8 == 0:
-            print('  ', end='')
-        if i % 16 == 0:
-            print()
-    # decode header
-    print()
-    print("------------------")
-    header_bytes = reply_bytes[:12]
-    body_bytes = reply_bytes[12:]
-    header = DNSHeader(header_bytes)
-    print(f'ID       {header.query_id:5d}')
-    print(f'QR      {header.qr:2d}')
-    print(f'Opcode  {header.opcode:2d}')
-    print(f'AA      {header.aa:2d}')
-    print(f'TC      {header.tc:2d}')
-    print(f'RD      {header.rd:2d}')
-    print(f'RA      {header.ra:2d}')
-    print(f'Z       {header.z:2d}')
-    print(f'RCODE   {header.rcode:2d}')
-    print(f'QDCOUNT {header.qdcount:2d}')
-    print(f'ANCOUNT {header.ancount:2d}')
-    print(f'NSCOUNT {header.nscount:2d}')
-    print(f'ARCOUNT {header.arcount:2d}')
-
 class DNSRecord:
     def __init__(self):
         pass
@@ -119,17 +68,77 @@ class DNSMessage:
 class DNSRecordReader:
     pass
 
-if len(sys.argv) < 3:
-    print(f'Usage python3 {sys.argv[0]} server domain_in_question', file=sys.stderr)
-    sys.exit(1)
+class DNSClient:
+    DNS_UDP_MAX_MESSAGE_LENGTH = 512
 
-destination_host = sys.argv[1]
-domain_in_question = sys.argv[2]
+    def __init__(self):
+        pass
 
-with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-    req = make_dns_request(domain_in_question)
-    s.sendto(req, (destination_host, DNS_PORT))
-    # TODO: handle timeout
-    (rep, addr) = s.recvfrom(DNS_MAX_MSG_LEN)
+    def do_query(self, nameserver, domain_str):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            req = self.make_dns_request(domain_str)
+            s.sendto(req, (nameserver, DNS_PORT))
+            # TODO: handle timeout
+            (rep, addr) = s.recvfrom(DNSClient.DNS_UDP_MAX_MESSAGE_LENGTH)
+        self.show_dns_reply(rep)
 
-show_dns_reply(rep)
+    def make_dns_request(self, domain_str):
+        """Makes a DNS query request message
+
+        :param domain_str: string of domain
+        :return: bytes of DNS query message
+        """
+        header_bytes = DNSHeader(query_id=random.getrandbits(16)).get_bytes()
+        labels = domain_str.split('.')
+        qname = b''
+        for s in labels:
+            qname += struct.pack('!B', len(s))
+            qname += s.encode()
+        qname += b'\0'
+        return header_bytes + qname + struct.pack('!hh', DNS_QTYPE_A, DNS_QCLASS_IN)
+
+    def show_dns_reply(self, reply_bytes):
+        """Shows DNS reply
+
+        :param reply_bytes: Replied DNS message
+        """
+        # TODO: decode the reply message
+        print("------------------")
+        i = 0
+        for b in reply_bytes:
+            i += 1
+            print(f'{b:02x} ', end='')
+            if i % 8 == 0:
+                print('  ', end='')
+            if i % 16 == 0:
+                print()
+        # decode header
+        print()
+        print("------------------")
+        header_bytes = reply_bytes[:12]
+        body_bytes = reply_bytes[12:]
+        header = DNSHeader(header_bytes)
+        print(f'ID       {header.query_id:5d}')
+        print(f'QR      {header.qr:2d}')
+        print(f'Opcode  {header.opcode:2d}')
+        print(f'AA      {header.aa:2d}')
+        print(f'TC      {header.tc:2d}')
+        print(f'RD      {header.rd:2d}')
+        print(f'RA      {header.ra:2d}')
+        print(f'Z       {header.z:2d}')
+        print(f'RCODE   {header.rcode:2d}')
+        print(f'QDCOUNT {header.qdcount:2d}')
+        print(f'ANCOUNT {header.ancount:2d}')
+        print(f'NSCOUNT {header.nscount:2d}')
+        print(f'ARCOUNT {header.arcount:2d}')
+
+
+if __name__ == '__main__':
+    if len(sys.argv) < 3:
+        print(f'Usage python3 {sys.argv[0]} server domain_in_question', file=sys.stderr)
+        sys.exit(1)
+
+    nameserver = sys.argv[1]
+    domain_str = sys.argv[2]
+    dns_client = DNSClient()
+    dns_client.do_query(nameserver, domain_str)
