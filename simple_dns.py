@@ -135,37 +135,37 @@ class DNSNameManager:
         self._dict[offset] = (label, next_offset)
 
 class DNSQuestion:
-    QTYPE_A = 1
-    QTYPE_NS = 2
-    QTYPE_MD = 3
-    QTYPE_MF = 4
-    QTYPE_CNAME = 5
-    QTYPE_SOA = 6
-    QTYPE_MB = 7
-    QTYPE_MG = 8
-    QTYPE_MR = 9
-    QTYPE_NULL = 10
-    QTYPE_WKS = 11
-    QTYPE_PTR = 12
-    QTYPE_HINFO = 13
-    QTYPE_MINFO = 14
-    QTYPE_MX = 15
-    QTYPE_TXT = 16
-    QTYPE_AXFR = 252
-    QTYPE_MAILB = 253
-    QTYPE_MAILA = 254
-    QTYPE_ALL = 255
+    Q_A = 1
+    Q_NS = 2
+    Q_MD = 3
+    Q_MF = 4
+    Q_CNAME = 5
+    Q_SOA = 6
+    Q_MB = 7
+    Q_MG = 8
+    Q_MR = 9
+    Q_NULL = 10
+    Q_WKS = 11
+    Q_PTR = 12
+    Q_HINFO = 13
+    Q_MINFO = 14
+    Q_MX = 15
+    Q_TXT = 16
+    Q_AXFR = 252
+    Q_MAILB = 253
+    Q_MAILA = 254
+    Q_ALL = 255
     qtype_str = {1:"A", 2:"NS", 3:"MD", 4:"MF", 5:"CNAME", 6:"SOA", 7:"MB", 8:"MG",
                  9:"MR", 10:"NULL", 11:"WKS", 12:"PTR", 13:"HINFO", 14:"MINFO",
                  15:"MX", 16:"TXT", 252:"AXFR", 253:"MAILB", 254:"MAILA", 255:"*"}
-    CLASS_IN = 1
-    CLASS_CS = 2
-    CLASS_CH = 3
-    CLASS_HS = 4
+    C_IN = 1
+    C_CS = 2
+    C_CH = 3
+    C_HS = 4
     class_str = {1:"IN", 2:"CS", 3:"CH", 4:"HS"}
 
     def __init__(self, name_manager, offset, question_bytes=None,
-                 domain='', qtype=QTYPE_A, qclass=CLASS_IN):
+                 domain='', qtype=Q_A, qclass=C_IN):
         if question_bytes:
             self.init_from_bytes(name_manager, offset, question_bytes)
             return
