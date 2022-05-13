@@ -10,11 +10,7 @@ import socket
 import struct
 import sys
 
-DNS_QTYPE_A = 1
-DNS_QCLASS_IN = 1
 DNS_PORT = 53
-DNS_MAX_MSG_LEN = 512
-
 
 def debug_msg(message_str):
     print("DEBUG: ", end='', file=sys.stderr)
@@ -134,13 +130,17 @@ class DNSNameManager:
         """
         domain_str = ''
         i = offset
+        prev_pointer = 0
         while True:
             if i >= len(message_bytes):
                 error_exit("Label format error")
             b = message_bytes[i]
-            debug_msg(f'read_domain_str(): i={i} {b:02x}')
             if b >> 6 == 3:  # Top 2 bits are 11
-                return (domain_str + self.get_label(b & 0x3f), i+1)
+                pos = 0x3fff & struct.unpack('!H', message_bytes[i:i+2])[0]
+                domain_str += '.' if domain_str != '' else ''
+                if prev_pointer > 0:
+                    self.update_pointer(prev_pointer, pos)
+                return (domain_str + self.get_label(pos), i+2)
             elif b == 0:
                 return (domain_str, i+1)
             elif b > 0x3f:
@@ -149,10 +149,14 @@ class DNSNameManager:
             label = message_bytes[i+1:i+b+1].decode()
             next_pos = i + b + 1 if message_bytes[i+b+1] > 0 else 0
             self.register(i, label, next_pos)
+            prev_pointer = i
             domain_str += '.' if i > offset else ''
             domain_str += label
-            debug_msg(f'read_domain_str(): domain_str {domain_str}')
             i += b + 1
+
+    def update_pointer(self, offset: int, next_offset):
+        (label, _) = self._dict[offset]
+        self._dict[offset] = (label, next_offset)
 
     def get_label(self, offset: int) -> str:
         label = ''
@@ -166,6 +170,22 @@ class DNSNameManager:
 
     def register(self, offset, label, next_offset):
         self._dict[offset] = (label, next_offset)
+
+    def make_domain_bytes(self, domain_name, offset: int) -> bytes:
+        labels = domain_name.split('.')
+        domain_bytes = b''
+        pos = offset
+        positions = []
+        for s in labels:
+            domain_bytes += struct.pack('!B', len(s))
+            domain_bytes += s.encode()
+            positions.append(pos)
+            pos += len(s)
+        domain_bytes += b'\0'
+        positions.append(0)
+        for i in range(len(labels)):
+            self.register(positions[i], labels[i], positions[i+1])
+        return domain_bytes
 
 
 class DNSQuestion:
@@ -186,11 +206,10 @@ class DNSQuestion:
 
         :parameter message: Full DNS message bytes
         :parameter offset: Position of the question in the message
-        :returns: (retrieved DNSQuestion
+        :returns: retrieved DNSQuestion
         """
         (domain, qtype_pos) = name_manager.read_domain_str(offset, message_bytes)
         next_offset = qtype_pos + 4
-        debug_msg(f"qtype_pos: {qtype_pos}")
         (qtype, qclass) = struct.unpack(
             '!HH', message_bytes[qtype_pos:next_offset])
         return (DNSQuestion(name_manager, offset, domain, qtype, qclass,
@@ -207,7 +226,7 @@ class DNSQuestion:
         else:
             self._byte_data = byte_data
 
-    def _make_bytes(self, name_manager: DNSNameManager, offset: int) -> bytes:
+    def _make_bytes_old(self, name_manager: DNSNameManager, offset: int) -> bytes:
         labels = self.domain.split('.')
         qname = b''
         pos = 0
@@ -224,6 +243,10 @@ class DNSQuestion:
                 offset+positions[i], labels[i], offset+positions[i+1])
         return qname + struct.pack('!HH', self.qtype, self.qclass)
 
+    def _make_bytes(self, name_manager: DNSNameManager, offset: int) -> bytes:
+        domain_bytes = name_manager.make_domain_bytes(self.domain, offset)
+        return domain_bytes + struct.pack('!HH', self.qtype, self.qclass)
+
     def get_bytes(self) -> bytes:
         return self._byte_data
 
@@ -232,29 +255,70 @@ class DNSQuestion:
               f"{self.qtype_str[self.qtype]}({self.qtype}) "
               f"{self.class_str[self.qclass]}({self.qclass})")
 
-
 class DNSRecord:
-    def __init__(self):
-        pass
+    (R_A, R_NS, R_MD, R_MF, R_CNAME,
+     R_SOA, R_MB, R_MG, R_MR, R_NULL,
+     R_WKS, R_PTR, R_HINFO, R_MINFO, R_MX, R_TXT) = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+                                                     11, 12, 13, 14, 15, 16)
+    rtype_str = {1: "A", 2: "NS", 3: "MD", 4: "MF", 5: "CNAME", 6: "SOA", 7: "MB", 8: "MG",
+                 9: "MR", 10: "NULL", 11: "WKS", 12: "PTR", 13: "HINFO", 14: "MINFO",
+                 15: "MX", 16: "TXT"}
+    (C_IN, C_CS, C_CH, C_HS) = (1, 2, 3, 4)
+    class_str = {1: "IN", 2: "CS", 3: "CH", 4: "HS"}
 
+    def retrieve_record(name_manager: DNSNameManager,
+                          message_bytes: bytes, offset: int) -> tuple[DNSRecord, int]:
+        """Retrieves a Resource Record from a full message
 
-class DNSMessage:
-    def __init__(self):
-        pass
+        :parameter message: Full DNS message bytes
+        :parameter offset: Position of the record in the message
+        :returns: retrieved resource record
+        """
+        (domain, type_pos) = name_manager.read_domain_str(offset, message_bytes)
+        rdata_offset = type_pos + 10
+        (rtype, rclass, ttl, rdlength) = struct.unpack('!HHLH', message_bytes[type_pos:rdata_offset])
+        rdata = DNSRecord.retrieve_rdata(name_manager, message_bytes, rdata_offset, rdlength, rtype)
+        return (DNSRecord(name_manager, offset, domain, rtype, rclass, ttl, rdlength, rdata,
+                            message_bytes[offset:rdata_offset+rdlength]), rdata_offset+rdlength)
 
-    def __init__(self, reply_bytes):
-        pass
+    def retrieve_rdata(name_manager, message_bytes, rdata_offset, rdlength, rtype):
+        if rtype == DNSRecord.R_A:
+            ipv4addr = struct.unpack('!L', message_bytes[rdata_offset:rdata_offset+rdlength])[0]
+            return (f'{(ipv4addr >> 24) & 0xff:d}.{(ipv4addr >> 16) & 0xff:d}.' +
+                    f'{(ipv4addr >> 8) & 0xff:d}.{ipv4addr & 0xff:d}')
+        elif rtype == DNSRecord.R_CNAME:
+            return name_manager.read_domain_str(rdata_offset, message_bytes)[0]
+        error_exit(f'Unsupported RDATA - {DNSRecord.rtype_str[rtype]}')
 
+    def __init__(self, name_manager: DNSNameManager, offset: int,
+                 domain: str = '', rtype: int = R_A, rclass: int = C_IN,
+                 ttl: int = 600, rdlength = 4, rdata = None, byte_data: bytes = None):
+        self.domain = domain
+        self.rtype = rtype
+        self.rclass = rclass
+        self.ttl = ttl
+        self.rdlength = rdlength
+        self.rdata = rdata
+        if not byte_data:
+            self._byte_data = self._make_bytes(name_manager, offset)
+        else:
+            self._byte_data = byte_data
 
-class DNSRecordReader:
-    pass
+    def _make_bytes(self, name_manager: DNSNameManager, offset: int):
+        domain_bytes = name_manager.make_domain_bytes(self.domain, offset)
+        return domain_bytes + struct.pack('!HH', self.qtype, self.qclass)
 
-
+    def show(self):
+        print(f"Resource:   {self.domain}")
+        print(f"      Type: {DNSRecord.rtype_str[self.rtype]}({self.rtype})")
+        print(f"     Class: {DNSRecord.class_str[self.rclass]}({self.rclass})")
+        print(f"       TTL: {self.ttl}")
+        print(f"  RDLENGTH: {self.rdlength}")
+        print(f"     RDATA: {self.rdata}")
 class DNSClient:
     DNS_UDP_MAX_MESSAGE_LENGTH = 512
 
     def __init__(self):
-        self.name_manager = DNSNameManager()
         pass
 
     def do_query(self, nameserver, domain_str):
@@ -266,8 +330,9 @@ class DNSClient:
         self.show_dns_reply(rep)
 
     def make_dns_request(self, domain_str):
+        name_manager = DNSNameManager()
         header_bytes = DNSHeader(query_id=random.getrandbits(16)).get_bytes()
-        question_bytes = DNSQuestion(self.name_manager, len(header_bytes),
+        question_bytes = DNSQuestion(name_manager, len(header_bytes),
                                      domain=domain_str).get_bytes()
         return header_bytes + question_bytes
 
@@ -287,12 +352,34 @@ class DNSClient:
         header.show()
         offset = 12
         questions = []
+        answers = []
+        nameservers = []
+        additional_records = []
+        name_manager = DNSNameManager()
+        print('\n# Question')
         for i in range(header.qdcount):
-            (q, offset) = DNSQuestion.retrieve_question(
-                self.name_manager, reply_bytes, offset)
-            q.show()
-            questions.append(q)
-
+            (r, offset) = DNSQuestion.retrieve_question(
+                name_manager, reply_bytes, offset)
+            r.show()
+            questions.append(r)
+        print('\n# Answer')
+        for i in range(header.ancount):
+            (r, offset) = DNSRecord.retrieve_record(
+                name_manager, reply_bytes, offset)
+            r.show()
+            answers.append(r)
+        print('\n# Authority')
+        for i in range(header.nscount):
+            (r, offset) = DNSRecord.retrieve_record(
+                name_manager, reply_bytes, offset)
+            r.show()
+            nameservers.append(r)
+        print('\n# Additional Information')
+        for i in range(header.arcount):
+            (r, offset) = DNSRecord.retrieve_record(
+                name_manager, reply_bytes, offset)
+            r.show()
+            additional_records.append(r)
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:
