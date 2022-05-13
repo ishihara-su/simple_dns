@@ -121,7 +121,7 @@ class DNSNameManager:
     def __init__(self):
         self._dict = {}
 
-    def read_domain_str(self, offset: int, message_bytes: bytes) -> tuple[str, int]:
+    def read_domain_str(self, offset: int, message_bytes: bytes, is_text: bool = False) -> tuple[str, int]:
         """Read domain strings from the message
 
         :parameter offset: Position of the first byte of the string in the message
@@ -150,7 +150,10 @@ class DNSNameManager:
             next_pos = i + b + 1 if message_bytes[i+b+1] > 0 else 0
             self.register(i, label, next_pos)
             prev_pointer = i
-            domain_str += '.' if i > offset else ''
+            if is_text:
+                domain_str += ' / ' if i > offset else ''
+            else:
+                domain_str += '.' if i > offset else ''
             domain_str += label
             i += b + 1
 
@@ -288,6 +291,22 @@ class DNSRecord:
                     f'{(ipv4addr >> 8) & 0xff:d}.{ipv4addr & 0xff:d}')
         elif rtype == DNSRecord.R_CNAME:
             return name_manager.read_domain_str(rdata_offset, message_bytes)[0]
+        elif rtype == DNSRecord.R_HINFO:
+            (cpu_str, offset) = name_manager.read_domain_str(rdata_offset, message_bytes, True)
+            (os_str, _) = name_manager.read_domain_str(offset, message_bytes, True)
+            return f'CPU: {cpu_str} / OS: {os_str}'
+        elif rtype == DNSRecord.R_MX:
+            preference = struct.unpack('!H', message_bytes[rdata_offset:rdata_offset+2])[0]
+            (exchange, _) = name_manager.read_domain_str(rdata_offset+2, message_bytes)
+            return f'Preference: {preference}, {exchange}'
+        elif rtype == DNSRecord.R_NS or rtype == DNSRecord.R_PTR or rtype == DNSRecord.R_TXT:
+            return name_manager.read_domain_str(rdata_offset, message_bytes, True)[0]
+        elif rtype == DNSRecord.R_SOA:
+            (mname, offset) = name_manager.read_domain_str(rdata_offset, message_bytes)
+            (rname, offset) = name_manager.read_domain_str(offset, message_bytes)
+            (serial, refresh, retry, expire, minimum) =  struct.unpack('!LLLLL', message_bytes[offset:offset+20])
+            return (f'Mname: {mname} / Rname: {rname} / Serial: {serial} / '
+                    f'Refresh: {refresh} / Retry: {retry} / Exprire: {expire}')
         error_exit(f'Unsupported RDATA - {DNSRecord.rtype_str[rtype]}')
 
     def __init__(self, name_manager: DNSNameManager, offset: int,
@@ -342,7 +361,7 @@ class DNSClient:
         :param reply_bytes: Replied DNS message
         """
         # TODO: decode the reply message
-        print("* Hex dump")
+        print("# Hex dump")
         dump_bytes(reply_bytes)
         print()
         print("# Header ")
