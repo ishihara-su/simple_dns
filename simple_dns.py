@@ -1,5 +1,9 @@
-
+# simple_dns.py - Simple DNS client
+#   Susumu Ishihara <ishihara.susumu@shizuoka.ac.jp>
 #
+#   Usage: python3 simple_dns.py name_server domain
+#
+
 from __future__ import annotations
 import random
 import socket
@@ -16,9 +20,11 @@ def debug_msg(message_str):
     print("DEBUG: ", end='', file=sys.stderr)
     print(message_str, file=sys.stderr)
 
+
 def error_exit(message_str):
     print(f"Error: {message_str}", file=sys.stderr)
     sys.exit(1)
+
 
 def dump_bytes(byte_data):
     i = 0
@@ -54,8 +60,10 @@ class DNSHeader:
     rcode_str = ["No error", "Format error", "Server failure",
                  "Name Error", "Not Implementd", "Refused"] + ["Reserved"] * 10
 
-    def __init__(self, header_bytes=None, query_id=0, qr=0, opcode=0, aa=0, tc=0,
-                 rd=1, ra=0, z=0, rcode=0, qdcount=1, ancount=0, nscount=0, arcount=0):
+    def __init__(self, header_bytes: bytes = None, query_id: int = 0, qr: int = 0,
+                 opcode: int = 0, aa: int = 0, tc: int = 0,
+                 rd: int = 1, ra: int = 0, z: int = 0, rcode: int = 0,
+                 qdcount: int = 1, ancount: int = 0, nscount: int = 0, arcount: int = 0):
         if header_bytes:
             self.init_from_bytes(header_bytes)
             return
@@ -73,7 +81,7 @@ class DNSHeader:
         self.nscount = nscount
         self.arcount = arcount
 
-    def init_from_bytes(self, header_bytes):
+    def init_from_bytes(self, header_bytes: bytes):
         (query_id, field_byte1, field_byte2, qdcount, ancount,
          nscount, arcount) = struct.unpack('!HBBHHHH', header_bytes)
         self.qr = (0x80 & field_byte1) >> 7
@@ -90,7 +98,7 @@ class DNSHeader:
         self.nscount = nscount
         self.arcount = arcount
 
-    def get_bytes(self):
+    def get_bytes(self) -> bytes:
         second_hw = (self.qr << 15 | self.opcode << 11 | self.aa << 10 | self.tc << 9 |
                      self.rd << 8 | self.ra << 7 | self.z << 4)
         header_bytes = struct.pack('!HHHHHH', self.query_id, second_hw,
@@ -146,7 +154,7 @@ class DNSNameManager:
             debug_msg(f'read_domain_str(): domain_str {domain_str}')
             i += b + 1
 
-    def get_label(self, offset):
+    def get_label(self, offset: int) -> str:
         label = ''
         while offset > 0:
             (new_label, offset) = self._dict[offset]
@@ -183,12 +191,13 @@ class DNSQuestion:
         (domain, qtype_pos) = name_manager.read_domain_str(offset, message_bytes)
         next_offset = qtype_pos + 4
         debug_msg(f"qtype_pos: {qtype_pos}")
-        (qtype, qclass) = struct.unpack('!HH', message_bytes[qtype_pos:next_offset])
+        (qtype, qclass) = struct.unpack(
+            '!HH', message_bytes[qtype_pos:next_offset])
         return (DNSQuestion(name_manager, offset, domain, qtype, qclass,
                             message_bytes[offset:next_offset]), next_offset)
 
     def __init__(self, name_manager: DNSNameManager, offset: int,
-                 domain: str = '', qtype: int = Q_A, qclass: int = C_IN, byte_data = None):
+                 domain: str = '', qtype: int = Q_A, qclass: int = C_IN, byte_data: bytes = None):
         self.domain = domain
         self.qtype = qtype
         self.qclass = qclass
@@ -198,7 +207,7 @@ class DNSQuestion:
         else:
             self._byte_data = byte_data
 
-    def _make_bytes(self, name_manager: DNSNameManager, offset):
+    def _make_bytes(self, name_manager: DNSNameManager, offset: int) -> bytes:
         labels = self.domain.split('.')
         qname = b''
         pos = 0
@@ -215,13 +224,14 @@ class DNSQuestion:
                 offset+positions[i], labels[i], offset+positions[i+1])
         return qname + struct.pack('!HH', self.qtype, self.qclass)
 
-    def get_bytes(self):
+    def get_bytes(self) -> bytes:
         return self._byte_data
 
     def show(self):
-       print(f"Question: {self.domain} "
-             f"{self.qtype_str[self.qtype]}({self.qtype}) "
-             f"{self.class_str[self.qclass]}({self.qclass})")
+        print(f"Question: {self.domain} "
+              f"{self.qtype_str[self.qtype]}({self.qtype}) "
+              f"{self.class_str[self.qclass]}({self.qclass})")
+
 
 class DNSRecord:
     def __init__(self):
@@ -272,14 +282,17 @@ class DNSClient:
         print()
         print("# Header ")
         header_bytes = reply_bytes[:12]
-        header = DNSHeader(header_bytes) # TODO: change to DNSHeader.retrieve_from_message
+        # TODO: change to DNSHeader.retrieve_from_message
+        header = DNSHeader(header_bytes)
         header.show()
         offset = 12
         questions = []
         for i in range(header.qdcount):
-            (q, offset) = DNSQuestion.retrieve_question(self.name_manager, reply_bytes, offset)
+            (q, offset) = DNSQuestion.retrieve_question(
+                self.name_manager, reply_bytes, offset)
             q.show()
             questions.append(q)
+
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:
