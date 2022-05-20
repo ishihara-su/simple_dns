@@ -203,6 +203,7 @@ class DNSQuestion:
     (C_IN, C_CS, C_CH, C_HS) = (1, 2, 3, 4)
     class_str = {1: "IN", 2: "CS", 3: "CH", 4: "HS"}
 
+    @staticmethod
     def retrieve_question(name_manager: DNSNameManager,
                           message_bytes: bytes, offset: int) -> tuple[DNSQuestion, int]:
         """Retrieves a Question from a full message
@@ -269,6 +270,7 @@ class DNSRecord:
     (C_IN, C_CS, C_CH, C_HS) = (1, 2, 3, 4)
     class_str = {1: "IN", 2: "CS", 3: "CH", 4: "HS"}
 
+    @staticmethod
     def retrieve_record(name_manager: DNSNameManager,
                           message_bytes: bytes, offset: int) -> tuple[DNSRecord, int]:
         """Retrieves a Resource Record from a full message
